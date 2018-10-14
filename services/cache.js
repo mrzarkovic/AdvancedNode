@@ -31,10 +31,13 @@ mongoose.Query.prototype.cache = function({ tag }) {
 };
 
 mongoose.Query.prototype.exec = async function() {
+    console.log('---- x ----');
+
     if (!this.useCache) {
+        console.log('   skip redis');
         return exec.apply(this, arguments);
     }
-
+    console.log('   use redis');
     const key = JSON.stringify({
         ...this.getQuery(),
         collection: this.mongooseCollection.name
@@ -42,12 +45,13 @@ mongoose.Query.prototype.exec = async function() {
 
     let cacheValue = await client.hget(this.tag, key);
     if (cacheValue) {
+        console.log('   - has cached value');
         const doc = JSON.parse(cacheValue);
         return Array.isArray(doc)
             ? doc.map(d => new this.model(d))
             : new this.model(doc);
     }
-
+    console.log('   - no cached value');
     const result = await exec.apply(this, arguments);
     client.hset(this.tag, key, JSON.stringify(result));
     return result;
@@ -56,8 +60,12 @@ mongoose.Query.prototype.exec = async function() {
 module.exports = {
     bust: function bust(tag) {
         const keys = Cache.tagsMap[JSON.stringify(tag)];
-        keys.map(key => {
-            client.del(key);
-        });
+        if (Array.isArray(keys) && keys.length) {
+            keys.map(key => {
+                client.del(key);
+            });
+            console.log('DELETE: ' + tag);
+            delete Cache.tagsMap[JSON.stringify(tag)];
+        }
     }
 };
